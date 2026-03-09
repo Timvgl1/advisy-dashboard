@@ -1,0 +1,16 @@
+{
+  "name": "advisy-dashboard",
+  "version": "1.0.0",
+  "description": "Advisy Setter Performance Dashboard mit Netlify DB",
+  "scripts": {
+    "dev": "netlify dev",
+    "setup-db": "node scripts/setup-db.mjs",
+    "deploy": "netlify deploy --prod"
+  },
+  "dependencies": {
+    "@netlify/neon": "^0.2.0"
+  },
+  "devDependencies": {
+    "netlify-cli": "^19.0.0"
+  }
+}

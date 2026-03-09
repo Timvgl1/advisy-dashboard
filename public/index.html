@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Advisy – Setter Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2310b981'/><text y='.9em' x='50' text-anchor='middle' font-size='70' fill='white'>⚡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#08090d;--bg2:rgba(14,16,24,0.75);--bg3:rgba(255,255,255,0.03);--br:rgba(255,255,255,0.06);--t:#e2e4ea;--t2:#9ca3af;--t3:#4b5563;--g:#10b981;--g2:#059669;--mono:'JetBrains Mono',monospace;--font:'Outfit',system-ui,sans-serif}
+html,body,#root{height:100%;width:100%}
+body{background:var(--bg);font-family:var(--font);color:var(--t);overflow-x:hidden}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}@keyframes si{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}@keyframes pu{0%,100%{opacity:1}50%{opacity:.4}}
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.06) transparent}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:28px!important}
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.5)}
+button{font-family:var(--font)}.card{background:var(--bg2);border:1px solid var(--br);border-radius:14px;padding:20px 22px;backdrop-filter:blur(20px)}.btn{border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all .15s}.mono{font-family:var(--mono)}
+table{width:100%;border-collapse:collapse}th{text-align:left;padding:7px 8px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em}td{padding:9px 8px}tbody tr{border-bottom:1px solid rgba(255,255,255,.03)}tr.hr:hover{background:rgba(255,255,255,.02)}
+.sp{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.av{display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0}
+.ld{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px}
+.ld>div:first-child{width:40px;height:40px;border:3px solid var(--br);border-top-color:var(--g);border-radius:50%;animation:spin .8s linear infinite}
+.lc{height:140px}.lc svg{width:100%;height:100%}
+.bar-c{display:flex;align-items:flex-end;gap:3px;height:140px;padding-top:20px}.bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px}.bar-s{width:100%;border-radius:2px 2px 0 0;transition:height .3s}.bar-l{font-size:9px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;max-width:100%;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="root"><div class="ld"><div></div><div style="color:var(--t3);font-size:14px">Dashboard lädt...</div></div></div>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+<script>
+var html=htm.bind(React.createElement),useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useMemo=React.useMemo,useRef=React.useRef;
+var ST={show:"#10b981",no_show:"#ef4444",rescheduled:"#eab308",open:"#64748b",cancelled:"#a855f7"};
+var SL={show:"Show",no_show:"No Show",rescheduled:"Verschoben",open:"Offen",cancelled:"Abgesagt"};
+var IL={scheduled:"Geplant",cancelled:"Abgesagt",completed:"Abgeschlossen",rescheduled:"Verschoben"};
+var fT=function(d){return new Date(d).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})};
+var fD=function(d){return new Date(d).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})};
+var fF=function(d){return fD(d)+" "+fT(d)};
+var sR=function(s,n){return(s+n===0)?0:Math.round(s/(s+n)*100)};
+var rT=function(d){var s=(Date.now()-new Date(d).getTime())/1000;return s<60?"gerade":s<3600?Math.floor(s/60)+"m":s<86400?Math.floor(s/3600)+"h":fF(d)};
+var ini=function(s){return s.split(" ").map(function(n){return n[0]}).join("")};
+
+// ═══ API CLIENT ═══
+var api={
+  get:function(path){return fetch("/api/"+path).then(function(r){return r.json()})},
+  post:function(path,body){return fetch("/api/"+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json()})},
+  patch:function(path,body){return fetch("/api/"+path,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json()})}
+};
+
+// ═══ CHART COMPONENTS ═══
+function MiniBar(props){
+  var data=props.data,keys=props.keys,colors=props.colors,labels=props.labels;
+  var max=Math.max.apply(null,data.map(function(d){return keys.reduce(function(s,k){return s+(d[k]||0)},0)}).concat([1]));
+  return html`<div><div class="bar-c">${data.map(function(d,i){return html`<div class="bar-col" key=${i}>${keys.slice().reverse().map(function(k){return html`<div class="bar-s" key=${k} style=${{height:((d[k]||0)/max*120)+"px",background:colors[k],minHeight:d[k]?"2px":"0"}}/>`})}<div class="bar-l">${d.label||""}</div></div>`})}</div>
+  <div style=${{display:"flex",gap:"14px",justifyContent:"center",marginTop:"10px"}}>${keys.map(function(k){return html`<div key=${k} style=${{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",color:"var(--t3)"}}><div style=${{width:8,height:8,borderRadius:2,background:colors[k]}}/>${labels[k]}</div>`})}</div></div>`;
+}
+function MiniLine(props){
+  var data=props.data,dk=props.dataKey,color=props.color;if(!data.length)return null;
+  var vals=data.map(function(d){return d[dk]||0});var max=Math.max.apply(null,vals.concat([1]));
+  var pts=vals.map(function(v,i){return{x:2+i/(vals.length-1)*96,y:98-v/max*96}});
+  return html`<div><div class="lc"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points=${pts.map(function(p){return p.x+","+p.y}).join(" ")} fill="none" stroke=${color} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+  ${pts.map(function(p,i){return html`<circle key=${i} cx=${p.x} cy=${p.y} r="3" fill=${color} stroke="var(--bg)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`})}</svg></div>
+  <div style=${{display:"flex",justifyContent:"space-between",marginTop:"6px"}}>${data.map(function(d,i){return i%2===0?html`<span key=${i} style=${{fontSize:"9px",color:"var(--t3)"}}>${d.label}</span>`:html`<span key=${i}/>`})}</div></div>`;
+}
+
+function SBtn(props){
+  var a=props.cur===props.status,c=ST[props.status];
+  return html`<button class="btn" onClick=${function(e){e.stopPropagation();props.onClick(props.status)}} style=${{padding:props.sz==="md"?"7px 16px":"4px 10px",fontSize:props.sz==="md"?"12px":"11px",background:a?c+"18":"var(--bg3)",color:a?c:"var(--t3)",border:"1px solid "+(a?c+"40":"var(--br)")}}>${SL[props.status]}</button>`;
+}
+function KCard(props){
+  return html`<div class="card" style=${props.big?{border:"1px solid "+props.color+"25",background:"linear-gradient(150deg,"+props.color+"08,rgba(14,16,24,0.75))"}:{}}>
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style=${{fontSize:12,color:"var(--t2)",fontWeight:500}}>${props.label}</span><div style=${{width:8,height:8,borderRadius:"50%",background:props.color,opacity:.5}}/></div>
+    <div style=${{fontSize:28,fontWeight:800,fontFamily:"var(--mono)",letterSpacing:"-.04em",lineHeight:1,color:props.big?props.color:"#f4f4f5"}}>${props.val}</div>
+    ${props.sub?html`<div style=${{fontSize:11,color:"var(--t3)",marginTop:6}}>${props.sub}</div>`:null}
+  </div>`;
+}
+
+// ═══ MAIN APP ═══
+function App(){
+  var _u=useState(function(){try{return JSON.parse(localStorage.getItem("adv-user"))}catch(e){return null}}),user=_u[0],setUser=_u[1];
+  var _us=useState([]),users=_us[0],setUsers=_us[1];
+  var _t=useState("dashboard"),tab=_t[0],setTab=_t[1];
+  var _df=useState("today"),df=_df[0],setDf=_df[1];
+  var _cf=useState(""),cfrom=_cf[0],setCfrom=_cf[1];
+  var _ct=useState(""),cto=_ct[0],setCto=_ct[1];
+  var _sf=useState("all"),sf=_sf[0],setSf=_sf[1];
+  var _stf=useState("all"),stf=_stf[0],setStf=_stf[1];
+  var _sy=useState(false),syncing=_sy[0],setSyncing=_sy[1];
+  var _to=useState(null),toast=_to[0],setToast=_to[1];
+  var _mo=useState(null),modal=_mo[0],setModal=_mo[1];
+  var _ap=useState([]),appts=_ap[0],setAppts=_ap[1];
+  var _ac=useState([]),acts=_ac[0],setActs=_ac[1];
+  var _kp=useState({today:{},week:{},month:{}}),kpis=_kp[0],setKpis=_kp[1];
+  var _sp=useState([]),setterP=_sp[0],setSetterP=_sp[1];
+  var _op=useState([]),openerP=_op[0],setOpenerP=_op[1];
+  var _cd=useState([]),chartD=_cd[0],setChartD=_cd[1];
+  var _ld=useState(true),loading=_ld[0],setLoading=_ld[1];
+  var tRef=useRef(null);
+
+  var notify=useCallback(function(msg,type){type=type||"ok";setToast({msg:msg,type:type});clearTimeout(tRef.current);tRef.current=setTimeout(function(){setToast(null)},2800)},[]);
+
+  // Load all data from API
+  var loadData=useCallback(function(){
+    var params="filter="+df;
+    if(df==="custom"&&cfrom&&cto)params="from="+cfrom+"&to="+cto;
+    if(sf!=="all")params+="&setter="+sf;
+    if(stf!=="all")params+="&status="+stf;
+    return Promise.all([
+      api.get("users"),
+      api.get("appointments?"+params),
+      api.get("activities?limit=25"),
+      api.get("kpis"),
+      api.get("setter-perf"),
+      api.get("opener-perf"),
+      api.get("chart-data"),
+    ]).then(function(res){
+      setUsers(res[0]);setAppts(res[1]);setActs(res[2]);setKpis(res[3]);setSetterP(res[4]);setOpenerP(res[5]);setChartD(res[6]);setLoading(false);
+    }).catch(function(e){console.error(e);setLoading(false)});
+  },[df,cfrom,cto,sf,stf]);
+
+  useEffect(function(){loadData()},[loadData]);
+  // Auto-refresh every 30s
+  useEffect(function(){var i=setInterval(loadData,30000);return function(){clearInterval(i)}},[loadData]);
+
+  var updateStatus=useCallback(function(aid,ns){
+    if(!user)return;
+    api.patch("appointments/"+aid,{final_status:ns,status_by:user.id}).then(function(){
+      api.post("activities",{msg:user.name+" → "+SL[ns]+" für "+(appts.find(function(a){return a.id===aid})||{}).company,user_id:user.id});
+      notify(SL[ns]);loadData();
+    });
+  },[user,appts,loadData,notify]);
+
+  var assignSetter=useCallback(function(aid,sid){
+    api.patch("appointments/"+aid,{setter_id:sid}).then(function(){
+      var s=users.find(function(u){return u.id===sid});
+      notify((s?s.name:"")+" zugewiesen");loadData();
+    });
+  },[users,loadData,notify]);
+
+  var doSync=useCallback(function(){
+    setSyncing(true);
+    api.post("sync-close",{}).then(function(r){
+      notify("Sync: "+r.created+" neu, "+r.updated+" aktualisiert");loadData();
+    }).catch(function(e){notify("Sync Fehler: "+e.message,"err")}).finally(function(){setSyncing(false)});
+  },[loadData,notify]);
+
+  var seedDemo=useCallback(function(){
+    api.post("seed-demo",{}).then(function(){notify("Demo-Daten generiert");loadData()});
+  },[loadData,notify]);
+
+  var exportCSV=useCallback(function(){
+    var rows=["Datum;Zeit;Firma;Lead;Opener;Setter;Import;Status"];
+    appts.forEach(function(a){var s=users.find(function(u){return u.id===a.setter_id});rows.push([fD(a.datetime),fT(a.datetime),a.company,a.lead_name,a.opener_name,s?s.name:"–",a.imported_status,a.final_status].join(";"))});
+    var el=document.createElement("a");el.href=URL.createObjectURL(new Blob(["\ufeff"+rows.join("\n")],{type:"text/csv;charset=utf-8;"}));el.download="advisy-"+new Date().toISOString().slice(0,10)+".csv";el.click();notify("CSV exportiert");
+  },[appts,users,notify]);
+
+  var myAppts=useMemo(function(){return user?appts.filter(function(a){return a.setter_id===user.id&&new Date(a.datetime).toDateString()===new Date().toDateString()}).sort(function(a,b){return new Date(a.datetime)-new Date(b.datetime)}):[];},[appts,user]);
+  var openers=useMemo(function(){var s=new Set();appts.forEach(function(a){if(a.opener_name)s.add(a.opener_name)});return Array.from(s)},[appts]);
+  var isAdmin=user?user.role==="admin":false;
+  var k=kpis||{today:{},week:{},month:{}};var kt=k.today||{};var kw=k.week||{};var km=k.month||{};
+
+  // ═══ LOGIN ═══
+  if(!user){
+    if(loading&&!users.length)return html`<div class="ld"><div></div><div style=${{color:"var(--t3)",fontSize:14}}>Verbinde mit Datenbank...</div></div>`;
+    return html`<div style=${{minHeight:"100vh",background:"linear-gradient(160deg,var(--bg) 0%,#0d1017 50%,var(--bg) 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style=${{background:"linear-gradient(160deg,rgba(14,16,24,.95),rgba(8,9,13,.98))",border:"1px solid var(--br)",borderRadius:24,padding:"52px 44px",width:420,maxWidth:"100%",boxShadow:"0 48px 96px rgba(0,0,0,.5)"}}>
+        <div style=${{textAlign:"center",marginBottom:40}}>
+          <div style=${{width:60,height:60,borderRadius:18,background:"linear-gradient(135deg,var(--g),var(--g2))",display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:20,boxShadow:"0 12px 40px rgba(16,185,129,.3)",fontSize:28}}>⚡</div>
+          <h1 style=${{color:"#f4f4f5",fontSize:28,fontWeight:800,letterSpacing:"-.03em"}}>Advisy</h1>
+          <p style=${{color:"var(--t3)",fontSize:14}}>Setter Performance Dashboard</p>
+          <p style=${{color:"var(--g)",fontSize:11,marginTop:8,fontFamily:"var(--mono)"}}>● Live – Netlify DB</p>
+        </div>
+        <div style=${{display:"flex",flexDirection:"column",gap:8}}>
+          ${users.map(function(u){return html`<button key=${u.id} onClick=${function(){setUser(u);localStorage.setItem("adv-user",JSON.stringify(u))}} style=${{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"var(--bg3)",border:"1px solid var(--br)",borderRadius:14,cursor:"pointer",color:"var(--t)",fontSize:14,fontFamily:"inherit",width:"100%"}}>
+            <div class="av" style=${{width:40,height:40,borderRadius:12,background:u.role==="admin"?"linear-gradient(135deg,#8b5cf6,#6d28d9)":"linear-gradient(135deg,var(--g),var(--g2))",fontSize:14}}>${ini(u.name)}</div>
+            <div style=${{flex:1,textAlign:"left"}}><div style=${{fontWeight:600}}>${u.name}</div><div style=${{fontSize:12,color:"var(--t3)"}}>${u.role==="admin"?"Admin":"Setter"}</div></div>
+            <span style=${{color:"var(--t3)"}}>→</span>
+          </button>`})}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ═══ MAIN RENDER ═══
+  return html`<div style=${{minHeight:"100vh"}}>
+    ${toast?html`<div style=${{position:"fixed",top:16,right:16,zIndex:999,padding:"10px 18px",borderRadius:10,fontSize:13,fontWeight:600,backdropFilter:"blur(16px)",animation:"si .2s ease-out",boxShadow:"0 8px 32px rgba(0,0,0,.3)",background:toast.type==="err"?"rgba(239,68,68,.14)":"rgba(16,185,129,.14)",border:"1px solid "+(toast.type==="err"?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)"),color:toast.type==="err"?"#f87171":"var(--g)"}}>${toast.type==="ok"?"✓ ":"✕ "}${toast.msg}</div>`:null}
+
+    ${modal?(function(){var a=appts.find(function(x){return x.id===modal});if(!a)return null;var s=users.find(function(u){return u.id===a.setter_id});
+      return html`<div onClick=${function(){setModal(null)}} style=${{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,.6)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div class="card" onClick=${function(e){e.stopPropagation()}} style=${{width:460,maxWidth:"100%",padding:"28px 32px",animation:"fi .2s ease-out"}}>
+          <div style=${{display:"flex",justifyContent:"space-between",marginBottom:18}}>
+            <div><h3 style=${{fontSize:18,fontWeight:700,color:"#f4f4f5"}}>${a.company}</h3><p style=${{fontSize:13,color:"var(--t2)"}}>${a.lead_name}</p></div>
+            <button class="btn" onClick=${function(){setModal(null)}} style=${{padding:6,background:"var(--bg3)",color:"var(--t3)",border:"1px solid var(--br)",fontSize:16}}>✕</button>
+          </div>
+          <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+            ${[["Datum",fF(a.datetime)],["Opener",a.opener_name],["Setter",s?s.name:"–"],["Import",IL[a.imported_status]||a.imported_status]].map(function(p){return html`<div key=${p[0]}><div style=${{fontSize:10,color:"var(--t3)",textTransform:"uppercase",fontWeight:600,marginBottom:2}}>${p[0]}</div><div style=${{fontSize:13,fontWeight:500}}>${p[1]}</div></div>`})}
+          </div>
+          <div style=${{fontSize:10,color:"var(--t3)",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Status setzen</div>
+          <div style=${{display:"flex",gap:6,flexWrap:"wrap"}}>${["show","no_show","rescheduled","cancelled"].map(function(st){return html`<${SBtn} key=${st} status=${st} cur=${a.final_status} sz="md" onClick=${function(s){updateStatus(a.id,s);setModal(null)}}/>`})}</div>
+        </div>
+      </div>`})():null}
+
+    <div style=${{position:"sticky",top:0,zIndex:50,background:"rgba(8,9,13,.88)",backdropFilter:"blur(20px)",borderBottom:"1px solid var(--br)",display:"flex",alignItems:"center",height:54,padding:"0 16px",gap:4,flexWrap:"wrap"}}>
+      <div style=${{display:"flex",alignItems:"center",gap:8,marginRight:16}}><div style=${{width:28,height:28,borderRadius:8,background:"linear-gradient(135deg,var(--g),var(--g2))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>⚡</div><span style=${{fontWeight:800,fontSize:16,color:"#f4f4f5"}}>Advisy</span></div>
+      ${[["dashboard","Dashboard"],["termine","Termine"],["analytics","Analytics"]].concat(isAdmin?[["admin","Admin"]]:[]).map(function(t){return html`<button key=${t[0]} class="btn" onClick=${function(){setTab(t[0])}} style=${{padding:"7px 11px",background:tab===t[0]?"rgba(16,185,129,.14)":"transparent",color:tab===t[0]?"var(--g)":"var(--t3)"}}>${t[1]}</button>`})}
+      <div style=${{flex:1}}/>
+      <button class="btn" onClick=${exportCSV} style=${{padding:"5px 10px",background:"var(--bg3)",color:"var(--t3)",border:"1px solid var(--br)"}}>↓ CSV</button>
+      <button class="btn" onClick=${doSync} disabled=${syncing} style=${{padding:"6px 12px",background:"rgba(16,185,129,.18)",color:"var(--g)",border:"1px solid rgba(16,185,129,.35)"}}>${syncing?"↻ Sync...":"↻ Close Sync"}</button>
+      <div style=${{width:1,height:22,background:"var(--br)"}}/>
+      <div style=${{display:"flex",alignItems:"center",gap:6,padding:"4px 10px 4px 4px",borderRadius:10,background:"var(--bg3)",border:"1px solid var(--br)"}}><div class="av" style=${{width:26,height:26,borderRadius:7,background:isAdmin?"linear-gradient(135deg,#8b5cf6,#6d28d9)":"linear-gradient(135deg,var(--g),var(--g2))",fontSize:10}}>${ini(user.name)}</div><span style=${{fontSize:12,fontWeight:600}}>${user.name.split(" ")[0]}</span></div>
+      <button class="btn" onClick=${function(){setUser(null);localStorage.removeItem("adv-user")}} style=${{padding:"5px 10px",background:"var(--bg3)",color:"var(--t3)",border:"1px solid var(--br)"}}>Logout</button>
+    </div>
+
+    <div class="filters">
+      ${[["today","Heute"],["yesterday","Gestern"],["tomorrow","Morgen"],["week","Woche"],["month","Monat"],["all","Alle"],["custom","Custom"]].map(function(f){return html`<button key=${f[0]} class="btn" onClick=${function(){setDf(f[0])}} style=${{padding:"4px 10px",fontSize:11,background:df===f[0]?"rgba(16,185,129,.14)":"var(--bg3)",color:df===f[0]?"var(--g)":"var(--t3)",border:"1px solid "+(df===f[0]?"rgba(16,185,129,.3)":"var(--br)")}}>${f[1]}</button>`})}
+      ${df==="custom"?html`<input type="date" value=${cfrom} onInput=${function(e){setCfrom(e.target.value)}} style=${{background:"var(--bg3)",border:"1px solid var(--br)",borderRadius:6,color:"var(--t)",padding:"3px 8px",fontSize:11}}/><span style=${{color:"var(--t3)"}}>–</span><input type="date" value=${cto} onInput=${function(e){setCto(e.target.value)}} style=${{background:"var(--bg3)",border:"1px solid var(--br)",borderRadius:6,color:"var(--t)",padding:"3px 8px",fontSize:11}}/>`:null}
+      <div style=${{flex:1}}/>
+      <span class="mono" style=${{fontSize:11,color:"var(--t3)"}}>${appts.length} Termine</span>
+    </div>
+
+    <div style=${{padding:"18px 16px 40px",maxWidth:1400,margin:"0 auto"}}>
+
+    ${tab==="dashboard"?html`<div style=${{display:"flex",flexDirection:"column",gap:18,animation:"fi .3s ease-out"}}>
+      <div style=${{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:10}}>
+        <${KCard} label="Termine" val=${kt.total||0} color="#6366f1" sub=${"W "+(kw.total||0)+" · M "+(km.total||0)}/>
+        <${KCard} label="Offen" val=${kt.open||0} color="#64748b"/>
+        <${KCard} label="Shows" val=${kt.show||0} color="#10b981" sub=${"W "+(kw.show||0)+" · M "+(km.show||0)}/>
+        <${KCard} label="No Shows" val=${kt.no_show||0} color="#ef4444"/>
+        <${KCard} label="Verschoben" val=${kt.rescheduled||0} color="#eab308"/>
+        <${KCard} label="Show Rate" val=${(kt.rate||0)+"%" } color="#10b981" big=${true} sub=${"W "+(kw.rate||0)+"% · M "+(km.rate||0)+"%"}/>
+      </div>
+      <div style=${{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:14}}>
+        <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Setter Performance</div>
+          <table><thead><tr>${["Setter","","Show","NS","V","O","Rate"].map(function(h){return html`<th key=${h} style=${{textAlign:h==="Setter"?"left":"center"}}>${h}</th>`})}</tr></thead>
+          <tbody>${setterP.map(function(s){return html`<tr key=${s.id}>
+            <td style=${{display:"flex",alignItems:"center",gap:8}}><div class="av" style=${{width:26,height:26,borderRadius:7,background:"linear-gradient(135deg,var(--g),var(--g2))",fontSize:10}}>${ini(s.name)}</div><div><div style=${{fontWeight:600,fontSize:13}}>${s.name}</div><div style=${{fontSize:10,color:"var(--t3)"}}>W ${s.week_rate||0}% · M ${s.month_rate||0}%</div></div></td>
+            <td class="mono" style=${{textAlign:"center",fontWeight:700}}>${s.today_total}</td>
+            <td class="mono" style=${{textAlign:"center",fontWeight:700,color:"var(--g)"}}>${s.today_show}</td>
+            <td class="mono" style=${{textAlign:"center",fontWeight:700,color:"#ef4444"}}>${s.today_no_show}</td>
+            <td class="mono" style=${{textAlign:"center",fontWeight:700,color:"#eab308"}}>${s.today_rescheduled}</td>
+            <td class="mono" style=${{textAlign:"center",color:"var(--t3)"}}>${s.today_open}</td>
+            <td style=${{textAlign:"center"}}><span class="mono" style=${{fontWeight:800,fontSize:14,color:s.today_rate>=70?"var(--g)":s.today_rate>=50?"#eab308":"#ef4444"}}>${s.today_rate}%</span></td>
+          </tr>`})}</tbody></table>
+        </div>
+        <div style=${{display:"flex",flexDirection:"column",gap:14}}>
+          ${!isAdmin?html`<div class="card">
+            <div style=${{display:"flex",justifyContent:"space-between",marginBottom:12}}><span style=${{fontSize:14,fontWeight:700,color:"#f4f4f5"}}>Meine Termine</span><span class="mono" style=${{fontSize:12,color:"var(--t3)"}}>${myAppts.length}</span></div>
+            ${myAppts.length===0?html`<p style=${{color:"var(--t3)",fontSize:13}}>Keine Termine heute</p>`:
+            html`<div style=${{display:"flex",flexDirection:"column",gap:6}}>${myAppts.map(function(a){return html`<div key=${a.id} onClick=${function(){setModal(a.id)}} style=${{padding:"11px 13px",borderRadius:10,background:"var(--bg3)",border:"1px solid var(--br)",cursor:"pointer"}}>
+              <div style=${{display:"flex",justifyContent:"space-between",marginBottom:5}}><div><span class="mono" style=${{fontSize:13,color:"var(--g)",fontWeight:700}}>${fT(a.datetime)}</span> <span style=${{fontWeight:600}}>${a.company}</span></div><span class="sp" style=${{background:ST[a.final_status]+"14",color:ST[a.final_status]}}>${SL[a.final_status]}</span></div>
+              <div style=${{fontSize:12,color:"var(--t2)",marginBottom:8}}>${a.lead_name} · ${a.opener_name}</div>
+              <div style=${{display:"flex",gap:5}}>${["show","no_show","rescheduled"].map(function(s){return html`<${SBtn} key=${s} status=${s} cur=${a.final_status} onClick=${function(st){updateStatus(a.id,st)}}/>`})}</div>
+            </div>`})}</div>`}
+          </div>`:null}
+          <div class="card" style=${{flex:1}}>
+            <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style=${{fontSize:14,fontWeight:700,color:"#f4f4f5"}}>Live</span><div style=${{width:6,height:6,borderRadius:"50%",background:"var(--g)",animation:"pu 2s infinite"}}/></div>
+            <div style=${{maxHeight:isAdmin?400:250,overflowY:"auto"}}>${acts.map(function(a){return html`<div key=${a.id} style=${{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.03)",display:"flex",alignItems:"center",gap:8}}>
+              <div style=${{width:5,height:5,borderRadius:"50%",flexShrink:0,background:a.msg.indexOf("Show")>-1&&a.msg.indexOf("No")===-1?"var(--g)":a.msg.indexOf("No Show")>-1?"#ef4444":a.msg.indexOf("Verschoben")>-1?"#eab308":"#64748b"}}/>
+              <span style=${{fontSize:12,color:"#d1d5db",flex:1}}>${a.msg}</span>
+              <span class="mono" style=${{fontSize:10,color:"var(--t3)",whiteSpace:"nowrap"}}>${rT(a.created_at)}</span>
+            </div>`})}</div>
+          </div>
+        </div>
+      </div>
+      <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Show Rate – 14 Tage</div><${MiniLine} data=${chartD} dataKey="rate" color="#10b981"/></div>
+    </div>`:null}
+
+    ${tab==="termine"?html`<div class="card" style=${{animation:"fi .3s ease-out"}}>
+      <div style=${{display:"flex",justifyContent:"space-between",marginBottom:14}}><span style=${{fontSize:14,fontWeight:700,color:"#f4f4f5"}}>Termine</span><span class="mono" style=${{fontSize:12,color:"var(--t3)"}}>${appts.length}</span></div>
+      <div style=${{overflowX:"auto"}}><table style=${{minWidth:700}}>
+        <thead><tr>${["Zeit","Lead / Firma","Opener","Setter","Status","Aktion"].map(function(h){return html`<th key=${h}>${h}</th>`})}</tr></thead>
+        <tbody>${appts.map(function(a){var s=users.find(function(u){return u.id===a.setter_id});return html`<tr key=${a.id} class="hr" style=${{cursor:"pointer"}} onClick=${function(){setModal(a.id)}}>
+          <td style=${{whiteSpace:"nowrap"}}><div class="mono" style=${{fontSize:12,color:"var(--g)",fontWeight:700}}>${fT(a.datetime)}</div><div style=${{fontSize:10,color:"var(--t3)"}}>${fD(a.datetime)}</div></td>
+          <td><div style=${{fontWeight:600,fontSize:13}}>${a.company}</div><div style=${{fontSize:11,color:"var(--t2)"}}>${a.lead_name}</div></td>
+          <td style=${{fontSize:12,color:"var(--t2)"}}>${a.opener_name}</td>
+          <td>${isAdmin?html`<select value=${a.setter_id||""} onClick=${function(e){e.stopPropagation()}} onChange=${function(e){e.stopPropagation();assignSetter(a.id,e.target.value)}} style=${{background:"var(--bg3)",border:"1px solid var(--br)",borderRadius:6,color:"var(--t)",padding:"3px 6px",fontSize:11}}><option value="">–</option>${users.filter(function(u){return u.role==="setter"}).map(function(u){return html`<option key=${u.id} value=${u.id}>${u.name}</option>`})}</select>`:html`<span style=${{fontSize:12}}>${s?s.name:"–"}</span>`}</td>
+          <td><span class="sp" style=${{background:ST[a.final_status]+"14",color:ST[a.final_status]}}>${SL[a.final_status]}</span></td>
+          <td onClick=${function(e){e.stopPropagation()}}><div style=${{display:"flex",gap:4}}>${(isAdmin||a.setter_id===user.id)?["show","no_show","rescheduled"].map(function(st){return html`<${SBtn} key=${st} status=${st} cur=${a.final_status} onClick=${function(s){updateStatus(a.id,s)}}/>`}):null}</div></td>
+        </tr>`})}</tbody>
+      </table>${appts.length===0?html`<div style=${{padding:32,textAlign:"center",color:"var(--t3)"}}>Keine Termine</div>`:null}</div>
+    </div>`:null}
+
+    ${tab==="analytics"?html`<div style=${{display:"flex",flexDirection:"column",gap:14,animation:"fi .3s ease-out"}}>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Termine / Tag</div><${MiniBar} data=${chartD} keys=${["show","no_show","rescheduled"]} colors=${{show:"#10b981",no_show:"#ef4444",rescheduled:"#eab308"}} labels=${{show:"Show",no_show:"No Show",rescheduled:"Verschoben"}}/></div>
+        <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Show Rate Verlauf</div><${MiniLine} data=${chartD} dataKey="rate" color="#10b981"/></div>
+      </div>
+      <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Opener Performance</div>
+        <table><thead><tr>${["Opener","Termine","Show","No Show","Versch.","Rate"].map(function(h){return html`<th key=${h} style=${{textAlign:h==="Opener"?"left":"center"}}>${h}</th>`})}</tr></thead>
+        <tbody>${openerP.map(function(o){return html`<tr key=${o.name}><td style=${{fontWeight:600}}>${o.name}</td><td class="mono" style=${{textAlign:"center",fontWeight:700}}>${o.total}</td><td class="mono" style=${{textAlign:"center",fontWeight:700,color:"var(--g)"}}>${o.show}</td><td class="mono" style=${{textAlign:"center",fontWeight:700,color:"#ef4444"}}>${o.no_show}</td><td class="mono" style=${{textAlign:"center",fontWeight:700,color:"#eab308"}}>${o.rescheduled}</td><td style=${{textAlign:"center"}}><span class="mono" style=${{fontWeight:800,fontSize:14,color:o.rate>=70?"var(--g)":o.rate>=50?"#eab308":"#ef4444"}}>${o.rate}%</span></td></tr>`})}</tbody></table>
+      </div>
+    </div>`:null}
+
+    ${tab==="admin"&&isAdmin?html`<div style=${{display:"flex",flexDirection:"column",gap:14,animation:"fi .3s ease-out"}}>
+      <div class="card">
+        <div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:14}}>Close CRM Sync</div>
+        <p style=${{fontSize:13,color:"var(--t2)",marginBottom:14,lineHeight:1.6}}>Klick auf "Close Sync" oben rechts. Der Server ruft die Close API direkt ab – kein CORS Problem, da es über die Netlify Function läuft.</p>
+        <div style=${{display:"flex",gap:8}}>
+          <button class="btn" onClick=${doSync} disabled=${syncing} style=${{background:"linear-gradient(135deg,var(--g),var(--g2))",color:"#fff",padding:"9px 22px",fontSize:13}}>${syncing?"Sync...":"Jetzt synchronisieren"}</button>
+          <button class="btn" onClick=${seedDemo} style=${{background:"rgba(239,68,68,.08)",color:"#ef4444",border:"1px solid rgba(239,68,68,.25)",padding:"9px 22px",fontSize:13}}>Demo-Daten laden</button>
+        </div>
+      </div>
+      <div class="card"><div style=${{fontSize:14,fontWeight:700,color:"#f4f4f5",marginBottom:12}}>Team</div>
+        <table><thead><tr>${["Name","Email","Rolle","Close ID"].map(function(h){return html`<th key=${h}>${h}</th>`})}</tr></thead>
+        <tbody>${users.map(function(u){return html`<tr key=${u.id}><td style=${{fontWeight:600}}>${u.name}</td><td class="mono" style=${{color:"var(--t2)",fontSize:12}}>${u.email}</td><td><span class="sp" style=${{background:u.role==="admin"?"rgba(139,92,246,.12)":"rgba(16,185,129,.12)",color:u.role==="admin"?"#a78bfa":"var(--g)"}}>${u.role}</span></td><td class="mono" style=${{fontSize:11,color:"var(--t3)"}}>${u.close_id||"–"}</td></tr>`})}</tbody></table>
+      </div>
+    </div>`:null}
+
+    </div>
+  </div>`;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
