@@ -17,14 +17,27 @@ const err = (msg, status = 500) => json({ error: msg }, status);
 async function ensureTables() {
   try {
     await sql`SELECT 1 FROM users LIMIT 1`;
-  } catch {
+    // Migrate: update role constraint and upsert real users
+    await sql`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`;
+    await sql`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('setter', 'admin', 'opener'))`;
+    await sql`
+      INSERT INTO users (id, name, email, role, close_id) VALUES
+        ('u1', 'Maxim Nickel', 'maxim@advisy.de', 'setter', 'usr_maxim'),
+        ('u2', 'Sergej Janle', 'sergej@advisy.de', 'setter', 'usr_sergej'),
+        ('u3', 'Tim Vogel', 'tim@advisy.de', 'admin', 'usr_tim'),
+        ('u4', 'Pana', 'pana@advisy.de', 'opener', null),
+        ('u5', 'Jaky', 'jaky@advisy.de', 'opener', null),
+        ('u6', 'Sabine', 'sabine@advisy.de', 'opener', null)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, role = EXCLUDED.role`;
+  } catch (e) {
+    if (e.message && e.message.includes("does not exist")) {
     console.log("Creating tables...");
     await sql`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('setter', 'admin')),
+        role TEXT NOT NULL CHECK (role IN ('setter', 'admin', 'opener')),
         close_id TEXT,
         active BOOLEAN DEFAULT true,
         created_at TIMESTAMPTZ DEFAULT now()
@@ -64,13 +77,16 @@ async function ensureTables() {
     // Insert demo users
     await sql`
       INSERT INTO users (id, name, email, role, close_id) VALUES
-        ('u1', 'Max Richter', 'max@advisy.de', 'setter', null),
-        ('u2', 'Lisa Weber', 'lisa@advisy.de', 'setter', null),
-        ('u3', 'Jan Meier', 'jan@advisy.de', 'setter', null),
-        ('u4', 'Tim Koch', 'tim@advisy.de', 'admin', null)
-      ON CONFLICT (id) DO NOTHING`;
+        ('u1', 'Maxim Nickel', 'maxim@advisy.de', 'setter', 'usr_maxim'),
+        ('u2', 'Sergej Janle', 'sergej@advisy.de', 'setter', 'usr_sergej'),
+        ('u3', 'Tim Vogel', 'tim@advisy.de', 'admin', 'usr_tim'),
+        ('u4', 'Pana', 'pana@advisy.de', 'opener', null),
+        ('u5', 'Jaky', 'jaky@advisy.de', 'opener', null),
+        ('u6', 'Sabine', 'sabine@advisy.de', 'opener', null)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, role = EXCLUDED.role`;
 
     console.log("Tables created.");
+    }
   }
 }
 
@@ -295,42 +311,91 @@ export default async function handler(req) {
     if (path === "/sync-close" && method === "POST") {
       const CLOSE_KEY = "api_5Fh9iC7MmeCy5urgaR2hDX.1b7xYKAKNPrsDkA5SaOUcb";
       const auth = "Basic " + Buffer.from(CLOSE_KEY + ":").toString("base64");
+      const closeGet = async (endpoint) => {
+        const r = await fetch("https://api.close.com/api/v1" + endpoint, { headers: { Authorization: auth } });
+        if (!r.ok) throw new Error("Close " + r.status);
+        return r.json();
+      };
 
-      const res = await fetch("https://api.close.com/api/v1/activity/meeting/?_limit=100&_order_by=-date_created", {
-        headers: { Authorization: auth, "Content-Type": "application/json" },
-      });
+      // Setter mapping: Close user_name → internal user_id
+      const SETTER_MAP = {
+        "Maxim Nickel": "u1",
+        "Sergej Janle": "u2",
+        "Tim Vogel": "u3",
+      };
 
-      if (!res.ok) return err("Close API: " + res.status, res.status);
-      const data = await res.json();
-      const meetings = data.data || [];
+      // 1. Fetch meetings
+      const meetData = await closeGet("/activity/meeting/?_limit=200&_order_by=-date_created");
+      const meetings = meetData.data || [];
 
+      // 2. Collect unique lead_ids to find openers
+      const leadIds = [...new Set(meetings.map(m => m.lead_id).filter(Boolean))];
+
+      // 3. For each lead, find who changed status to "Setting" = Opener
+      // Fetch LeadStatusChange activities and get Close users for name lookup
+      const openerCache = {}; // lead_id → opener_name
+
+      // Fetch Close users for ID→name mapping
+      const closeUsersData = await closeGet("/user/");
+      const closeUsers = {};
+      for (const u of (closeUsersData.data || [])) {
+        closeUsers[u.id] = (u.first_name + " " + u.last_name).trim();
+      }
+
+      // Batch fetch status changes for leads (max 50 at a time to avoid rate limits)
+      for (let i = 0; i < leadIds.length; i += 10) {
+        const batch = leadIds.slice(i, i + 10);
+        for (const leadId of batch) {
+          try {
+            const scData = await closeGet("/activity/leadstatuschange/?lead_id=" + leadId + "&_limit=20&_order_by=-date_created");
+            const changes = scData.data || [];
+            // Find the status change TO "Setting"
+            for (const sc of changes) {
+              if (sc.new_status_label === "Setting" || (sc.new_status && sc.new_status.toLowerCase().includes("setting"))) {
+                const openerUserId = sc.user_id;
+                openerCache[leadId] = closeUsers[openerUserId] || sc.user_name || "Unbekannt";
+                break;
+              }
+            }
+          } catch (e) {
+            // Skip this lead if lookup fails
+          }
+        }
+        // Small delay between batches
+        if (i + 10 < leadIds.length) await new Promise(r => setTimeout(r, 300));
+      }
+
+      // 4. Upsert meetings with correct setter + opener
       let created = 0, updated = 0;
-      const setters = await sql`SELECT id FROM users WHERE role = 'setter' AND active = true`;
-      const setterIds = setters.map(s => s.id);
-
       for (const m of meetings) {
         if (!m.id) continue;
         let is = "scheduled";
         if (m.status === "completed" || m.status === "done") is = "completed";
         if (m.status === "canceled" || m.status === "cancelled") is = "cancelled";
 
-        const randomSetter = setterIds[Math.floor(Math.random() * setterIds.length)] || null;
+        // Setter = meeting owner from Close
+        const closeUserName = m.user_name || m._user_name || "";
+        const setterId = SETTER_MAP[closeUserName] || null;
+
+        // Opener = who changed lead status to "Setting"
+        const openerName = openerCache[m.lead_id] || "–";
 
         const result = await sql`
           INSERT INTO appointments (close_id, opener_name, setter_id, datetime, imported_status, source, lead_name, company, close_lead_id, notes, imported_at)
-          VALUES (${m.id}, ${m.user_name || m._user_name || 'Close'}, ${randomSetter}, ${m.starts_at || m.date_created}, ${is}, 'close', ${m.lead_name || ''}, ${m.title || m.note?.substring(0, 80) || 'Close Meeting'}, ${m.lead_id || ''}, ${m.note || ''}, now())
+          VALUES (${m.id}, ${openerName}, ${setterId}, ${m.starts_at || m.date_created}, ${is}, 'close', ${m.lead_name || ''}, ${m.title || m.note?.substring(0, 80) || 'Close Meeting'}, ${m.lead_id || ''}, ${m.note || ''}, now())
           ON CONFLICT (close_id) DO UPDATE SET
             imported_status = EXCLUDED.imported_status,
-            opener_name = EXCLUDED.opener_name,
+            opener_name = COALESCE(NULLIF(EXCLUDED.opener_name, '–'), appointments.opener_name),
+            setter_id = COALESCE(EXCLUDED.setter_id, appointments.setter_id),
             company = COALESCE(EXCLUDED.company, appointments.company),
             updated_at = now()
           RETURNING (xmax = 0) as is_new`;
         if (result[0]?.is_new) created++; else updated++;
       }
 
-      await sql`INSERT INTO activities (msg, user_id) VALUES (${'Close Sync: ' + created + ' neu, ' + updated + ' aktualisiert'}, 'system')`;
+      await sql`INSERT INTO activities (msg, user_id) VALUES (${'Close Sync: ' + created + ' neu, ' + updated + ' aktualisiert (mit Opener-Lookup)'}, 'system')`;
 
-      return json({ created, updated, total: meetings.length });
+      return json({ created, updated, total: meetings.length, openers_found: Object.keys(openerCache).length });
     }
 
     // ─── POST /seed-demo ───────────────────────────────────────────
